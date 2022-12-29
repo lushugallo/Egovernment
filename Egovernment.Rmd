@@ -1,0 +1,412 @@
+---
+title: "Egovernment 2003-2022"
+author: "Lucía Gallo"
+date: "12/2022"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+# Análisis del E-Government Index (ONU) 
+#### Complementario al trabajo final de la Maestría en Políticas Públicas, UTDT.
+
+**A continación se presenta un análisis de las tendencias y evolución de las políticas de Gobierno Digital o E-Government a nivel global. El mismo es un análisis extendido y complementario al trabajo final presentado para obtener el título de Magister en Políticas Públicas, bajo el nombre: "IDENTIDAD DIGITAL DESCENTRALIZADA Y GOBIERNO: HACIA UN NUEVO MODELO DE GOBERNANZA DE DATOS EN EL SECTOR PÚBLICO"**
+
+Todas las bases de datos que se utilizan están recopiladas y disponibilizadas por las Naciones Unidas.
+Las mismas están disponibles online en: https://publicadministration.un.org/egovkb/en-us/Data-Center
+
+
+**Sobre las bases de datos**
+
+La ONU cuenta con dos grandes bases de datos:
+
+1) E-Government Development Index (EGDI)
+
+2) E-Participation Index (EPI)
+
+
+Ambas están disponibles a nivel:
+
+- Regional (incluye división por continente, subregiones del continente y grupo de países según nivel de ingresos.
+
+- País (listado de 193 países).    
+   Esta base, no sólamente incluye el índice numérico de cada categoría sino los valores de los subíndices que lo componen. Ellos son Online Service Index, Human Capital Index y Telecommunication Infrastructure Index.
+  
+
+------------------------------------------
+
+##Base EGDI
+
+Primero cargamos los paquetes a utilizar:
+
+```{r, output.lines=4}
+library(tidyverse)
+require(devtools)
+library(sf)
+library(rgdal)
+library(dplyr)
+library(ggplot2)
+library(readxl)
+#library(leaflet)
+#library(RColorBrewer)
+```
+
+
+### Bases regionales 
+
+Comenzamos con la lectura de bases de EGDI por regiones y por grupos de países según ingreso.
+```{r}
+EDGI_REG_2003 <- read.csv("EGOV_REGION_DATA_2003_EGDI.csv")
+EDGI_REG_2004 <- read.csv("EGOV_REGION_DATA_2004_EGDI.csv")
+EDGI_REG_2005 <-read.csv("EGOV_REGION_DATA_2005_EGDI.csv")
+EDGI_REG_2008 <-read.csv("EGOV_REGION_DATA_2008_EGDI.csv")
+EDGI_REG_2010 <-read.csv("EGOV_REGION_DATA_2010_EGDI.csv")
+EDGI_REG_2012 <-read.csv("EGOV_REGION_DATA_2012_EGDI.csv")
+EDGI_REG_2014 <-read.csv("EGOV_REGION_DATA_2014_EGDI.csv")
+EDGI_REG_2016 <-read.csv("EGOV_REGION_DATA_2016_EGDI.csv")
+EDGI_REG_2018 <-read.csv("EGOV_REGION_DATA_2018_EGDI.csv")
+EDGI_REG_2020 <-read.csv("EGOV_REGION_DATA_2020_EGDI.csv")
+EDGI_REG_2022 <-read.csv("EGOV_REGION_DATA_2022_EGDI.csv")
+```
+
+Unimos todas las bases anteriores. 
+```{r}
+EDGI_REG_2003_2022 <- left_join(EDGI_REG_2003, EDGI_REG_2004, by="Region.or.Country") %>% left_join(EDGI_REG_2005, by="Region.or.Country")  %>% left_join(EDGI_REG_2008, by="Region.or.Country")  %>% left_join(EDGI_REG_2010, by="Region.or.Country")  %>% left_join(EDGI_REG_2012, by="Region.or.Country")%>% left_join(EDGI_REG_2014, by="Region.or.Country")  %>% left_join(EDGI_REG_2016, by="Region.or.Country")  %>% left_join(EDGI_REG_2018, by="Region.or.Country")  %>% left_join(EDGI_REG_2020, by="Region.or.Country") %>% left_join(EDGI_REG_2022, by="Region.or.Country") 
+```
+
+Renombramos la columna *Región* y calculamos el crecimiento desde el comienzo de la medición al último año disponible. Además, calculamos la "oportunidad" de crecimiento que esa categoría tiene, es decir, cuánto se aleja de la mayor puntuación posible: 1.
+```{r}
+EDGI_REG_2003_2022 <- EDGI_REG_2003_2022 %>% rename(Region=Region.or.Country) %>% mutate(Crecimiento = X2022.EGDI.Average - X2003.EGDI.Average) %>% mutate(maxScore = 1) %>% mutate(Oportunidad = maxScore- X2022.EGDI.Average)
+```
+
+Seleccionamos las regiones a analizar e imprimimos la tabla de ranking de crecimiento y oportunidad de crecimiento:
+- se eliminan valores de la categoría *Región* por no ser representativos ni parte de la categoría que se busca mostrar.
+```{r}
+EDGI_REG <- filter(EDGI_REG_2003_2022, !(Region == "High income" | Region == "Europe" | Region ==  "Americas" |Region ==  "World" | Region == "Upper middle income" | Region == "Asia" | Region == "Oceania" |Region ==  "Small Island Developing State" | Region == "Lower middle income" | Region == "Landlocked Developing Country" | Region == "Africa" | Region == "Oceania - Polynesia" | Region ==  "Oceania - Micronesia" | Region ==  "Least Developed Country" | Region == "Low income")) %>% arrange(desc(Crecimiento))  %>% select(Region, X2022.EGDI.Average, Crecimiento, Oportunidad) 
+
+EDGI_REG <- EDGI_REG %>% rename("2022"=X2022.EGDI.Average)
+EDGI_REG
+```
+
+Para guardar la base de datos puede emplearse el siguiente comando:
+```{r}
+#write.csv(EDGI_REG_2003_2020, "EDGI_REG_2003_2020.csv", row.names = FALSE)
+```
+
+
+### Base a nivel continental
+
+A continuación, se crea un dataset que incluye sólamente la información a nivel continental. Cabe destacar que para el continente americano, se generará un dataset alternativo donde se incluyan divisiones subcontinentales para entender la evolución en LATAM y el Caribe.
+
+```{r}
+EDGI_REG_SELEC <- filter(EDGI_REG_2003_2022, Region %in% c("Americas","Europe" , "Asia", "Oceania" ,"Africa")) %>% arrange(desc(Crecimiento))
+```
+
+Cambiamos el formato en el que se muestra la información (de ancho a largo), para luego poder graficar.
+```{r}
+EDGI_REG_SELEC_LONG<- EDGI_REG_SELEC %>% pivot_longer(cols = 2:12,
+                                                  names_to = "Year",
+                                                  values_to = "EGDI")  
+```
+
+A continuación, renombramos las columnas parar porder graficar luego y para que la información pueda leerse de forma más clara. Pasamos el año a formato numérico. 
+```{r}
+EDGI_REG_TES <- EDGI_REG_SELEC_LONG
+
+EDGI_REG_TES[EDGI_REG_TES == "X2003.EGDI.Average"] <- "2003"
+EDGI_REG_TES[EDGI_REG_TES == "X2004.EGDI.Average"] <- "2004"
+EDGI_REG_TES[EDGI_REG_TES == "X2005.EGDI.Average"] <- "2005"
+EDGI_REG_TES[EDGI_REG_TES == "X2008.EGDI.Average"] <- "2008"
+EDGI_REG_TES[EDGI_REG_TES == "X2010.EGDI.Average"] <- "2010"
+EDGI_REG_TES[EDGI_REG_TES == "X2012.EGDI.Average"] <- "2012"
+EDGI_REG_TES[EDGI_REG_TES == "X2014.EGDI.Average"] <- "2014"
+EDGI_REG_TES[EDGI_REG_TES == "X2016.EGDI.Average"] <- "2016"
+EDGI_REG_TES[EDGI_REG_TES == "X2018.EGDI.Average"] <- "2018"
+EDGI_REG_TES[EDGI_REG_TES == "X2020.EGDI.Average"] <- "2020"
+EDGI_REG_TES[EDGI_REG_TES == "X2022.EGDI.Average"] <- "2022"
+
+EDGI_REG_SELEC_LONG <- EDGI_REG_TES %>% mutate(Year=as.integer(Year))
+```
+
+
+
+### Gráfico de evolución del Índice de Desarrollo de E-Government (EGDI) por región
+
+Realizamos el primer gráfico, a nivel continental:
+
+```{r}
+EVOL_REG <- ggplot(data = EDGI_REG_SELEC_LONG,
+       mapping = aes(x=Year, y = EGDI, color=Region)) +
+  geom_line() +
+  labs(x = "Continente",
+       y = "EDGI",
+       title="Evolución del Índice de Desarrollo de E-Government (EGDI) por continente",
+       caption="Fuente: elaboración propia con datos de la ONU") +
+  scale_color_manual(breaks=c("Americas","Asia", "Europe", "Oceania","Africa"),
+      values = c("#095D6A", "#fBBC58" ,"#F57B51", "#42376A", "#B46088")) + theme(legend.position = "bottom")
+
+EVOL_REG
+```
+
+Para guardar el gráfico como imagen:
+```{r}
+#ggsave("EVOL_REG.png", plot = EVOL_REG, dpi = 300)
+```
+
+Ahora realizamos los mismos pasos pero incorporando el desagregado del con continente americano a nivel regional.
+```{r}
+EDGI_REG_SELEC2 <- filter(EDGI_REG_2003_2022, Region %in% c("Americas - Central America","Americas - North America","Americas - South America","Americas - Caribbean","Europe", "Asia", "Oceania" ,"Africa")) %>% arrange(desc(Crecimiento))
+```
+
+```{r}
+EDGI_REG_SELEC_LONG2<- EDGI_REG_SELEC2 %>% pivot_longer(cols = 2:12,
+                                                  names_to = "Year",
+                                                  values_to = "EGDI")  
+```
+
+```{r}
+EDGI_REG_TES2 <- EDGI_REG_SELEC_LONG2
+
+EDGI_REG_TES2[EDGI_REG_TES2 == "X2003.EGDI.Average"] <- "2003"
+EDGI_REG_TES2[EDGI_REG_TES2 == "X2004.EGDI.Average"] <- "2004"
+EDGI_REG_TES2[EDGI_REG_TES2 == "X2005.EGDI.Average"] <- "2005"
+EDGI_REG_TES2[EDGI_REG_TES2 == "X2008.EGDI.Average"] <- "2008"
+EDGI_REG_TES2[EDGI_REG_TES2 == "X2010.EGDI.Average"] <- "2010"
+EDGI_REG_TES2[EDGI_REG_TES2 == "X2012.EGDI.Average"] <- "2012"
+EDGI_REG_TES2[EDGI_REG_TES2 == "X2014.EGDI.Average"] <- "2014"
+EDGI_REG_TES2[EDGI_REG_TES2 == "X2016.EGDI.Average"] <- "2016"
+EDGI_REG_TES2[EDGI_REG_TES2 == "X2018.EGDI.Average"] <- "2018"
+EDGI_REG_TES2[EDGI_REG_TES2 == "X2020.EGDI.Average"] <- "2020"
+EDGI_REG_TES2[EDGI_REG_TES2 == "X2022.EGDI.Average"] <- "2022"
+
+EDGI_REG_SELEC_LONG2 <- EDGI_REG_TES2 %>% mutate(Year=as.integer(Year))
+```
+
+Renombramos el nombre de las divisiones subcontinentales
+```{r}
+EDGI_REG_SELEC_LONG2[EDGI_REG_SELEC_LONG2 == "Americas - North America"] <- "North America"
+EDGI_REG_SELEC_LONG2[EDGI_REG_SELEC_LONG2 == "Americas - South America"] <- "South America"
+EDGI_REG_SELEC_LONG2[EDGI_REG_SELEC_LONG2 == "Americas - Central America"] <- "Central America"
+EDGI_REG_SELEC_LONG2[EDGI_REG_SELEC_LONG2 == "Americas - Caribbean"] <- "Caribbean"
+```
+
+Y ya podemos imprimir la nueva versión del primer gráfico.
+```{r}
+EVOL_REG2 <- ggplot(data = EDGI_REG_SELEC_LONG2,
+       mapping = aes(x=Year, y = EGDI, color=Region)) +
+  geom_line() +
+  labs(x = "Continente/región",
+       y = "EDGI",
+       title="Evolución del Índice de Desarrollo de E-Government (EGDI) por región",
+       caption="Fuente: elaboración propia con datos de la ONU") +
+  scale_color_manual(breaks=c("North America","Asia", "Europe", "Oceania","Africa","South America", "Central America", "Caribbean"),
+      values = c("#095D6A", "#fBBC58" ,"#9b9b9b", "#9b9b9b", "#9b9b9b", "#4DAF4A", "#A65628", "#F781BF")) + theme(legend.position = "bottom")
+
+
+EVOL_REG2
+```
+Para guardar el gráfico:
+
+```{r}
+#ggsave("EVOL_REG2.png", plot = EVOL_REG2, dpi = 300)
+```
+
+##### COVID-19
+El año 2020 estuvo marcado por la irrupción de la pandemia de sars-cov-2. Su llegada fue vista como un disparador de la digitalización a nivel global. Para ver la tendencia del e-government de 2018 a 2020 vs de 2020 a 2022:
+
+```{r}
+EDGI_REG_Pandemia <- EDGI_REG_SELEC %>% select(Region,"X2018.EGDI.Average","X2020.EGDI.Average","X2022.EGDI.Average") %>%
+  mutate(Crecimiento_Pandemia = X2022.EGDI.Average- X2020.EGDI.Average) %>%
+  mutate(Crecimiento_prepand = X2020.EGDI.Average- X2018.EGDI.Average) %>%
+  mutate(Diferencia_crecimiento = Crecimiento_Pandemia -Crecimiento_prepand) %>%
+  rename("2022"=X2022.EGDI.Average) %>%
+  rename("2020"=X2020.EGDI.Average) %>% 
+  rename("2018"=X2018.EGDI.Average) %>%
+  arrange(desc(Crecimiento_Pandemia))
+
+EDGI_REG_Pandemia 
+```
+
+Es interesante notar que aunque la pandemia es vista como un acelerador de la digitalización, se ve una merma en el crecimiento durante el período 2020-2022.
+
+
+--------------------------------------------
+
+
+## Base de eParticipation
+
+
+### Análisis a nivel regional
+
+ Lectura de bases de eParticipation por regiones y por grupos de países según ingreso
+```{r}
+ePart_REG_2003 <- read.csv("EGOV_REGION_DATA_2003_EPART.csv")
+ePart_REG_2004 <- read.csv("EGOV_REGION_DATA_2004_EPART.csv")
+ePart_REG_2005 <-read.csv("EGOV_REGION_DATA_2005_EPART.csv")
+ePart_REG_2008 <-read.csv("EGOV_REGION_DATA_2008_EPART.csv")
+ePart_REG_2010 <-read.csv("EGOV_REGION_DATA_2010_EPART.csv")
+ePart_REG_2012 <-read.csv("EGOV_REGION_DATA_2012_EPART.csv")
+ePart_REG_2014 <-read.csv("EGOV_REGION_DATA_2014_EPART.csv")
+ePart_REG_2016 <-read.csv("EGOV_REGION_DATA_2016_EPART.csv")
+ePart_REG_2018 <-read.csv("EGOV_REGION_DATA_2018_EPART.csv")
+ePart_REG_2020 <-read.csv("EGOV_REGION_DATA_2020_EPART.csv")
+ePart_REG_2022 <-read.csv("EGOV_REGION_DATA_2022_EPART.csv")
+```
+
+Unión de todas las bases anteriores. Evolución del índice promedio por región y por grupos de países según ingresos
+```{r}
+ePart_REG_2003_2022 <- left_join(ePart_REG_2003, ePart_REG_2004, by="Region.or.Country") %>% left_join(ePart_REG_2005, by="Region.or.Country")  %>% left_join(ePart_REG_2008, by="Region.or.Country")  %>% left_join(ePart_REG_2010, by="Region.or.Country")  %>% left_join(ePart_REG_2012, by="Region.or.Country")%>% left_join(ePart_REG_2014, by="Region.or.Country")  %>% left_join(ePart_REG_2016, by="Region.or.Country")  %>% left_join(ePart_REG_2018, by="Region.or.Country")  %>% left_join(ePart_REG_2020, by="Region.or.Country")  %>% left_join(ePart_REG_2022, by="Region.or.Country") 
+```
+
+Renombramos la columna Región y calculamos el crecimiento desde el comienzo de la medición al último año disponible. Además, calculamos la “oportunidad” de crecimiento que esa categoría tiene, es decir, cuánto se aleja de la mayor puntuación posible: 1.
+
+```{r}
+ePart_REG_2003_2022 <- ePart_REG_2003_2022 %>% rename(Region=Region.or.Country) %>% mutate(Crecimiento = X2022.EPART.Average - X2003.EPART.Average) %>% mutate(maxScore = 1) %>% mutate(Oportunidad = maxScore- X2022.EPART.Average)
+```
+
+Seleccionamos las regiones a analizar e imprimimos la tabla de ranking de crecimiento y oportunidad de crecimiento:
+*se eliminan valores de la categiría "Región" por no ser representativos ni parte de la categoría que se busca mostrar
+```{r}
+ePart_REG_Crecimiento_Op <- filter(ePart_REG_2003_2022, !(Region == "High income" | Region == "Europe" | Region ==  "Americas" |Region ==  "World" | Region == "Upper middle income" | Region == "Asia" | Region == "Oceania" |Region ==  "Small Island Developing State" | Region == "Lower middle income" | Region == "Landlocked Developing Country" | Region == "Africa" | Region == "Oceania - Polynesia" | Region ==  "Oceania - Micronesia" | Region ==  "Least Developed Country" | Region == "Low income")) %>% select(Region,X2022.EPART.Average, Crecimiento, Oportunidad) %>% arrange(desc(Crecimiento))
+
+ePart_REG_Crecimiento_Op <- ePart_REG_Crecimiento_Op %>% rename("2022"=X2022.EPART.Average) 
+ePart_REG_Crecimiento_Op
+```
+Guardamos la nueva base con el siguiente comando:
+
+```{r}
+#write.csv(ePart_REG_Crecimiento_Op, "ePart_REG_Crecimiento_Op.csv", row.names = FALSE)
+```
+
+### Base a nivel continental
+
+A continuación, se crea un dataset que incluye sólamente la información a nivel continental. Cabe destacar que para el continente americano, se generará un dataset alternativo donde se incluyan divisiones subcontinentales para entender la evolución en LATAM y el Caribe.
+
+```{r}
+ePart_REG_SELEC <- filter(ePart_REG_2003_2022, Region %in% c("Americas","Europe" , "Asia", "Oceania" ,"Africa")) %>% arrange(desc(Crecimiento))
+```
+
+Cambiamos el formato en el que se muestra la información (de ancho a largo), para luego poder graficar.
+```{r}
+ePart_REG_SELEC_LONG <- ePart_REG_SELEC %>% pivot_longer(cols = 2:12,
+                                                  names_to = "Year",
+                                                  values_to = "EPART")  
+```
+
+A continuación, renombramos las columnas parar porder graficar luego y para que la información pueda leerse de forma más clara. Pasamos el año a formato numérico. 
+```{r}
+ePart_REG_SELEC <- ePart_REG_SELEC_LONG
+
+ePart_REG_SELEC[ePart_REG_SELEC == "X2003.EPART.Average"] <- "2003"
+ePart_REG_SELEC[ePart_REG_SELEC == "X2004.EPART.Average"] <- "2004"
+ePart_REG_SELEC[ePart_REG_SELEC == "X2005.EPART.Average"] <- "2005"
+ePart_REG_SELEC[ePart_REG_SELEC == "X2008.EPART.Average"] <- "2008"
+ePart_REG_SELEC[ePart_REG_SELEC == "X2010.EPART.Average"] <- "2010"
+ePart_REG_SELEC[ePart_REG_SELEC == "X2012.EPART.Average"] <- "2012"
+ePart_REG_SELEC[ePart_REG_SELEC == "X2014.EPART.Average"] <- "2014"
+ePart_REG_SELEC[ePart_REG_SELEC == "X2016.EPART.Average"] <- "2016"
+ePart_REG_SELEC[ePart_REG_SELEC == "X2018.EPART.Average"] <- "2018"
+ePart_REG_SELEC[ePart_REG_SELEC == "X2020.EPART.Average"] <- "2020"
+ePart_REG_SELEC[ePart_REG_SELEC == "X2022.EPART.Average"] <- "2022"
+ePart_REG_TES <- ePart_REG_SELEC
+
+ePart_REG_TES <- ePart_REG_TES %>% mutate(Year=as.integer(Year))
+
+ePart_REG_TES 
+
+
+```
+
+### Gráfico de evolución del Índice de Desarrollo de E-Participation (EPI) por región
+
+Realizamos el primer gráfico, a nivel continental
+
+```{r}
+EVOL_REG_EPART <- ggplot(data = ePart_REG_TES,
+       mapping = aes(x= Year, y = EPART, color=Region)) +
+  geom_line() +
+  labs(x = "Continente",
+       y = "EPI",
+       title="Evolución del Índice de E-Participation por continente",
+       caption="Fuente: elaboración propia con datos de la ONU") +
+  scale_color_manual(breaks=c("Americas","Asia", "Europe", "Oceania","Africa"),
+      values = c("#095D6A", "#fBBC58" ,"#F57B51", "#42376A", "#B46088")) + theme(legend.position = "bottom")
+
+EVOL_REG_EPART
+```
+Podemos guardar el gráfico con el siguiente comando:
+
+```{r}
+#ggsave("EVOL_REG_EPART.png", plot = EVOL_REG_EPART, dpi = 300)
+```
+
+
+Ahora realizamos los mismos pasos pero incorporando el desagregado del con continente americano a nivel regional.
+
+```{r}
+ePart_REG_SELEC2 <- filter(ePart_REG_2003_2022, Region %in% c("Americas - Central America","Americas - North America","Americas - South America","Americas - Caribbean","Europe", "Asia", "Oceania" ,"Africa")) %>% arrange(desc(Crecimiento))
+```
+
+```{r}
+ePart_REG_SELEC_LONG2<- ePart_REG_SELEC2 %>% pivot_longer(cols = 2:12,
+                                                  names_to = "Year",
+                                                  values_to = "EPART")  
+```
+
+```{r}
+ePart_REG_TES2 <- ePart_REG_SELEC_LONG2
+
+ePart_REG_TES2[ePart_REG_TES2 == "X2003.EPART.Average"] <- "2003"
+ePart_REG_TES2[ePart_REG_TES2 == "X2004.EPART.Average"] <- "2004"
+ePart_REG_TES2[ePart_REG_TES2 == "X2005.EPART.Average"] <- "2005"
+ePart_REG_TES2[ePart_REG_TES2 == "X2008.EPART.Average"] <- "2008"
+ePart_REG_TES2[ePart_REG_TES2 == "X2010.EPART.Average"] <- "2010"
+ePart_REG_TES2[ePart_REG_TES2 == "X2012.EPART.Average"] <- "2012"
+ePart_REG_TES2[ePart_REG_TES2 == "X2014.EPART.Average"] <- "2014"
+ePart_REG_TES2[ePart_REG_TES2 == "X2016.EPART.Average"] <- "2016"
+ePart_REG_TES2[ePart_REG_TES2 == "X2018.EPART.Average"] <- "2018"
+ePart_REG_TES2[ePart_REG_TES2 == "X2020.EPART.Average"] <- "2020"
+ePart_REG_TES2[ePart_REG_TES2 == "X2022.EPART.Average"] <- "2022"
+
+ePart_REG_TES2 <- ePart_REG_TES2 %>% mutate(Year=as.integer(Year))
+
+
+```
+
+Renombramos el nombre de las divisiones subcontinentales
+```{r}
+ePart_REG_TES2 [ePart_REG_TES2  == "Americas - North America"] <- "North America"
+ePart_REG_TES2 [ePart_REG_TES2  == "Americas - South America"] <- "South America"
+ePart_REG_TES2 [ePart_REG_TES2  == "Americas - Central America"] <- "Central America"
+ePart_REG_TES2 [ePart_REG_TES2   == "Americas - Caribbean"] <- "Caribbean"
+```
+
+Ya podemos imprimir la nueva versión del gráfico anterior:
+```{r}
+ EVOL_REG_EPART2 <- ggplot(data = ePart_REG_TES2,
+       mapping = aes(x= Year
+                    , y = EPART, color=Region)) +
+  geom_line() +
+  labs(x = "Región",
+       y = "EPI",
+       title="Evolución del Índice de E-Participation por región",
+       caption="Fuente: elaboración propia con datos de la ONU") +
+   scale_color_manual(breaks=c("North America","Asia", "Europe", "Oceania","Africa","South America", "Central America", "Caribbean"),
+      values = c("#095D6A", "#fBBC58" ,"#9b9b9b", "#9b9b9b", "#9b9b9b", "#4DAF4A", "#A65628", "#F781BF")) + theme(legend.position = "bottom")
+
+ EVOL_REG_EPART2
+
+```
+Podemos guardar el gráfico con el siguiente comando:
+```{r}
+ggsave("EVOL_REG_EPART2.png", plot = EVOL_REG_EPART2, dpi = 300)
+```
+
+
+
+
+
